@@ -1,121 +1,103 @@
-п»їп»ї#define _CRT_SECURE_NO_WARNINGS
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#endif // !WIN32_LEAN_AND_MEAN
+#endif
 
 #include<Windows.h>
-#include<Winsock2.h>
-#include<WS2tcpip.h>
 #include<iphlpapi.h>
+#include<WinSock2.h>
+#include<WS2tcpip.h>
 #include<iostream>
 using namespace std;
 
-#pragma comment(lib, "WS2_32.lib")
+#pragma comment(lib, "Ws2_32.lib")
 
 #define DEFAULT_PORT			"27015"
 #define DEFAULT_BUFFER_LENGTH	1500
-
 void main()
 {
 	setlocale(LC_ALL, "");
-	//1) РРЅРёС†РёР°Р»РёР·Р°С†РёСЏ WinSock
+	
+	//1) Инициализируем WinSock:
 	WSAData wsaData;
+	INT iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-	int iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
-	if (iResult != 0)
-	{
-		cout << "Error: WSAstartup failed:" << iResult << endl;
-		return;
-	}
-
-	//2) РџСЂРѕРІРµСЂСЏРµРј, РЅРµ Р·Р°РЅСЏС‚ Р»Рё РїРѕСЂС‚, РЅР° РєРѕС‚РѕСЂРѕРј РјС‹ С…РѕС‚РёРј Р·Р°РїСѓСЃС‚РёС‚СЊ СЃРІРѕР№ РЎРµСЂРІРµСЂ:
 	addrinfo hints;
 	ZeroMemory(&hints, sizeof(hints));
-	hints.ai_family = AF_INET;			//TCP/IPv4
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_protocol = IPPROTO_TCP;
-	hints.ai_flags = AI_PASSIVE;
 
+	//2) Выполняем разрешение имен:
 	addrinfo* result = NULL;
-	iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+	iResult = getaddrinfo("127.0.0.1", DEFAULT_PORT, &hints, &result);
 	if (iResult != 0)
 	{
+		cout << "getaddrinfo() failed with code: " << iResult << endl;
 		WSACleanup();
-		cout << "Error: getaddrinfo failed:" << iResult << endl;
 		return;
 	}
-	cout << hints.ai_addr << endl;
 
-	//3) РЎРѕР·РґР°РµРј CРѕРєРµС‚, РєРѕС‚РѕСЂС‹Р№ Р±СѓРґРµС‚ РїСЂРѕСЃР»СѓС€РёРІР°С‚СЊ РЎРµСЂРІРµСЂ:
-	SOCKET ListenSocket =
-		socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-
-	if (ListenSocket == INVALID_SOCKET)
+	//3) Создаем сокет для подключения к серверу:
+	SOCKET connect_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+	if (connect_socket == INVALID_SOCKET)
 	{
-		cout << "Error: Socket creation failed: " << WSAGetLastError() << endl;
+		cout << "Socket creation failed with code: " << WSAGetLastError() << endl;
 		freeaddrinfo(result);
 		WSACleanup();
 		return;
 	}
 
-	//4) РЎРІСЏР·С‹РІР°РµРј СЃРѕРєРµС‚ СЃ СЃРµС‚РµРІРѕР№ РєР°СЂС‚РѕР№, РєРѕС‚РѕСЂСѓСЋ РѕРЅ Р±СѓРґРµС‚ РїСЂРѕСЃР»СѓС€РёРІР°С‚СЊ:
-	//strcpy(result->ai_addr->sa_data,"127.0.0.1");
-	iResult = bind(ListenSocket, result->ai_addr, result->ai_addrlen);
+	//4) Подключаемся к серверу:
+	iResult = connect(connect_socket, result->ai_addr, result->ai_addrlen);
 	if (iResult == SOCKET_ERROR)
 	{
-		cout << "Error: bind failed with code " << WSAGetLastError() << endl;
-		closesocket(ListenSocket);
+		cout << "Unable to connect to Server" << endl;
+		closesocket(connect_socket);
 		freeaddrinfo(result);
 		WSACleanup();
 		return;
 	}
 
-	//5) Р—Р°РїСѓСЃРєР°РµРј РЎРѕРєРµС‚:
-	iResult = listen(ListenSocket, SOMAXCONN);
+	//5) Получение и отправка данных:
+	//int recvbuflen = DEFAULT_BUFFER_LENGTH;
+	CONST CHAR SEND_BUFFER[] = "Hello Server, I am Client";
+	CHAR recvbuffer[DEFAULT_BUFFER_LENGTH]{};
+
+	iResult = send(connect_socket, SEND_BUFFER, strlen(SEND_BUFFER), 0);
 	if (iResult == SOCKET_ERROR)
 	{
-		cout << "Error: Listen failed with code " << WSAGetLastError() << endl;
-		closesocket(ListenSocket);
+		cout << "Send data failed with " << WSAGetLastError() << endl;
+		closesocket(connect_socket);
+		freeaddrinfo(result);
+		WSACleanup();
+		return;
+	}
+	cout << iResult << " Bytes sent" << endl;
+
+	iResult = shutdown(connect_socket, SD_SEND);
+	if (iResult == SOCKET_ERROR)
+	{
+		cout << "Shutdown failed << " << WSAGetLastError() << endl;
+		closesocket(connect_socket);
 		freeaddrinfo(result);
 		WSACleanup();
 		return;
 	}
 
-	//6) Р—Р°С†РёРєР»РёРІР°РµРј РЎРѕРєРµС‚ РЅР° РїРѕР»СѓС‡РµРЅРёРµ СЃРѕРµРґРёРЅРµРЅРёР№ РѕС‚ РєР»РёРµРЅС‚РѕРІ:
-	CHAR recvbuffer[DEFAULT_BUFFER_LENGTH] = {};
-	int recv_buffer_lennth = DEFAULT_BUFFER_LENGTH;
-	SOCKET ClientSocket = accept(ListenSocket, NULL, NULL);
+	//6) Receive data:
 	do
 	{
-		iResult = recv(ClientSocket, recvbuffer, recv_buffer_lennth, 0);
-		if (iResult > 0)
-		{
-			cout << "Bytes received: " << iResult << endl;
-			cout << "Message: " << recvbuffer << endl;
-			INT iSendResult = send(ClientSocket, recvbuffer, iResult, 0);
-			if (iSendResult == SOCKET_ERROR)
-			{
-				cout << "Error: Send failed with code: " << WSAGetLastError() << endl;
-				closesocket(ClientSocket);
-				closesocket(ListenSocket);
-				freeaddrinfo(result);
-				WSACleanup();
-				return;
-			}
-			cout << "Bytes sent: " << iSendResult << endl;
-		}
-		else if (iResult == 0)
-		{
-			cout << "Connection closing" << endl;
-		}
-		else
-		{
-			cout << "Error: recv() failed with code " << WSAGetLastError() << endl;
-			closesocket(ClientSocket);
-			closesocket(ListenSocket);
-			freeaddrinfo(result);
-			WSACleanup();
-			return;
-		}
+		iResult = recv(connect_socket, recvbuffer, DEFAULT_BUFFER_LENGTH, 0);
+		if (iResult > 0)cout << "Bytes received: " << iResult << endl;
+		else if (iResult == 0)cout << "Connection closed" << endl;
+		else cout << "Receive failed with code: " << WSAGetLastError() << endl;
 	} while (iResult > 0);
+
+	//7) Disconnect:
+	iResult = shutdown(connect_socket, SD_SEND);
+	closesocket(connect_socket);
+	freeaddrinfo(result);
+	WSACleanup();
+
+	system("PAUSE");
 }
